@@ -37,10 +37,24 @@ your shopping list at once.
 **Chores** — Recurring household jobs with daily/weekly/monthly/yearly
 schedules, optional assignees, and overdue tracking.
 
+**One field for everything** — Instead of a form, there is a single box. Type
+"12 oz cheddar $6.75 from Supermarket" and it works out the amount, unit, price
+and store. Paste a shopping list, a block of receipt text, or rows straight out
+of Excel or Google Sheets. Photograph a receipt and it reads the text. Anything
+it doesn't recognise becomes a new product rather than being dropped, and every
+guess is shown for correction before a thing is saved.
+
 **Barcode scanning** — Uses the browser's native `BarcodeDetector` where it
 exists (Chrome on Android and desktop). Elsewhere — Safari, Firefox — you get a
 manual entry field feeding the same code path, rather than a multi-megabyte WASM
 decoder you'd have to download before your first scan.
+
+**Stocktake** — Purchase and Consume record a change; Inventory records the
+truth. Enter what you actually counted and the app books the difference.
+
+**Product statistics** — Last purchased, last price, average price, average
+shelf life, spoil rate, stock value, and a price history chart broken down by
+store.
 
 ## Running it
 
@@ -69,6 +83,20 @@ works from a sub-path with no server rewrite rules.
 Once installed it runs full screen with no browser chrome and works with no
 connection.
 
+## Online and offline
+
+The app runs entirely from the device, so everything works with no connection
+once it has been opened a single time. There is no server and no API to fall
+back on.
+
+One feature needs the network the first time: reading photographs. Text
+recognition is about 7 MB of WebAssembly and language data, far too much to ship
+inside an app that is otherwise 94 kB, so it is fetched on first use and cached
+afterwards. If it can't be fetched — offline on a first run, or a host whose
+content policy blocks it — the app says so and points you at your phone's own
+text recognition instead of failing silently. Recognition itself runs locally;
+photographs are never uploaded anywhere.
+
 ## Where your data lives
 
 In `localStorage`, on the device you're using. Nothing is uploaded anywhere —
@@ -93,12 +121,22 @@ to look around before committing.
 | `npm run build` | Typecheck, then build to `dist/` |
 | `npm run preview` | Serve the production build |
 | `npm run typecheck` | TypeScript only |
+| `npm test` | Everything below, in order |
+| `npm run test:parse` | The universal input parser, against the demo database |
 | `npm run e2e` | Build, serve, and drive the app in a real browser |
+| `npm run test:offline` | Load once, cut the network, check it still works |
+| `npm run standalone` | Bundle the whole app into one openable HTML file |
 | `npm run icons` | Regenerate the PWA icon set |
 
-`npm run e2e` is the meaningful test: it drives the real UI and then asserts
-against what actually landed in storage, so it catches stock arithmetic bugs and
-not just rendering ones.
+`npm run e2e` drives the real UI and then asserts against what actually landed
+in storage, so it catches stock arithmetic bugs and not just rendering ones.
+
+`npm run test:offline` exists because "it's a PWA, it works offline" was true of
+the manifest and false of the app. A service worker does not control the page
+that registers it, so the JavaScript was never cached on a first visit and an
+offline reload rendered nothing. The test asserts on cache contents as well as
+on what renders, because an earlier version of it passed by accident — the page
+had come from the browser's own HTTP cache rather than the service worker.
 
 `npm run icons` regenerates `public/icons/` from `scripts/gen-icons.mjs`, which
 draws the mark with a small signed-distance rasteriser and encodes PNGs with

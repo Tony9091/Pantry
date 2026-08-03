@@ -156,6 +156,33 @@ check(
   db.shoppingItems.some((i) => i.auto && i.productId === 'prod_banana'),
 )
 
+// A stocktake books the difference rather than a delta.
+await page.goto(`${BASE}#/inventory`, { waitUntil: 'networkidle' })
+await page.getByRole('combobox').first().selectOption({ label: 'Chopped Tomatoes' })
+await page.waitForTimeout(400)
+db = await readDb()
+const cansNow = amountOf(db, 'prod_tomatocan')
+// Count one fewer than the books say.
+await page.getByRole('button', { name: 'Decrease' }).first().click()
+await page.getByRole('button', { name: 'Save stocktake' }).click()
+await page.waitForTimeout(500)
+db = await readDb()
+check(
+  'stocktake books the difference',
+  amountOf(db, 'prod_tomatocan') === cansNow - 1,
+  `${cansNow} -> ${amountOf(db, 'prod_tomatocan')}`,
+)
+check(
+  'stocktake is logged as a correction',
+  db.stockLog.some((l) => l.productId === 'prod_tomatocan' && l.note === 'Stocktake'),
+)
+
+// Purchases record price and store, which the statistics depend on.
+check(
+  'purchases carry price and store',
+  db.stockLog.some((l) => l.action === 'purchase' && l.price !== undefined && l.storeId),
+)
+
 // Chore tracking sets today's date.
 await page.goto(`${BASE}#/chores`, { waitUntil: 'networkidle' })
 await page.getByRole('button', { name: /Mark Take out the recycling done/ }).click()

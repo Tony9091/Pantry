@@ -11,17 +11,66 @@
  * once the shell is cached — there is no API to fall back to.
  */
 
-const VERSION = 'v1'
+const VERSION = 'v2'
 const CACHE = `pantry-${VERSION}`
+
+/**
+ * `ignoreVary` is essential, not a tweak.
+ *
+ * Vite emits <script crossorigin>, so the page requests its own bundle with an
+ * `Origin` header. Static hosts commonly answer with `Vary: Origin`. Entries
+ * precached by the worker carry no Origin, so a strict match rejects them and
+ * the request falls through to a network that isn't there — the app shell is
+ * cached, and the app is still blank offline. Everything here is same-origin,
+ * so ignoring Vary is safe.
+ */
+const MATCH_OPTS = { ignoreVary: true }
 
 // Resolved relative to the worker's own location so a sub-path deploy works.
 const SHELL = ['./', './index.html', './manifest.webmanifest']
+
+/**
+ * Reads index.html and returns the assets it references.
+ *
+ * This matters more than it looks: a service worker does not control the page
+ * that registers it, so on a first visit the hashed JS and CSS are fetched
+ * around the worker and never enter the cache. Without this, going offline
+ * after one visit yields a blank page — the shell is cached but the script
+ * that fills it is not. Parsing the entry document keeps the worker honest
+ * about whatever filenames the build produced, with no build-time coupling.
+ */
+async function precacheAssets(cache) {
+  const response = await fetch('./index.html', { cache: 'reload' })
+  if (!response.ok) return
+  // Clone before reading: a Response body can only be consumed once, and
+  // cloning afterwards throws.
+  const copy = response.clone()
+  const html = await response.text()
+  await cache.put('./index.html', copy)
+
+  const urls = new Set()
+  const attr = /(?:src|href)\s*=\s*["']([^"']+)["']/gi
+  let match
+  while ((match = attr.exec(html))) {
+    const url = match[1]
+    // Same-origin, non-anchor references only.
+    if (!url || url.startsWith('#') || url.startsWith('data:') || /^https?:/i.test(url)) continue
+    urls.add(url)
+  }
+
+  await Promise.all(
+    [...urls].map((url) => cache.add(url).catch(() => undefined)),
+  )
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(SHELL))
+      .then(async (cache) => {
+        await cache.addAll(SHELL).catch(() => undefined)
+        await precacheAssets(cache).catch(() => undefined)
+      })
       // A failed pre-cache must not block activation; runtime caching recovers.
       .catch(() => undefined)
       .then(() => self.skipWaiting()),
@@ -55,8 +104,8 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() =>
           caches
-            .match('./index.html')
-            .then((cached) => cached ?? caches.match('./'))
+            .match('./index.html', MATCH_OPTS)
+            .then((cached) => cached ?? caches.match('./', MATCH_OPTS))
             .then(
               (cached) =>
                 cached ??
@@ -71,7 +120,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => {
+    caches.match(request, MATCH_OPTS).then((cached) => {
       if (cached) return cached
       return fetch(request).then((response) => {
         // Only cache real, same-origin successes.

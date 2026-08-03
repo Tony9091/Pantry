@@ -190,3 +190,18 @@ export const IconSun = (p: Props) => (
     <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
   </svg>
 )
+
+export const IconCamera = (p: Props) => (
+  <svg {...base} {...p}>
+    <path d="M4 8.5h2.6l1.6-2.4h7.6L17.4 8.5H20a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1Z" />
+    <circle cx="12" cy="13.8" r="3.4" />
+  </svg>
+)
+
+export const IconImage = (p: Props) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="4.5" width="18" height="15" rx="2" />
+    <circle cx="8.5" cy="9.5" r="1.6" />
+    <path d="m3.5 16.5 4.7-4.2a1.5 1.5 0 0 1 2 0l4 3.6M14 14.4l1.9-1.7a1.5 1.5 0 0 1 2 0l2.6 2.3" />
+  </svg>
+)

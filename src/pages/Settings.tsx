@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { Database, ThemePreference } from '../types'
+import type { Database, Settings, ThemePreference } from '../types'
 import { useDb, useStore } from '../store/useStore'
 import { isoDate } from '../lib/util'
 import { TopBar } from '../components/Layout'
@@ -97,6 +97,36 @@ export function SettingsPage() {
               >
                 <option value="1">Monday</option>
                 <option value="0">Sunday</option>
+              </Select>
+            </Field>
+          </div>
+
+          <div className="field-row">
+            <Field label="Show weights priced per">
+              <Select
+                value={db.settings.costPerWeight}
+                onChange={(e) =>
+                  updateSettings({ costPerWeight: e.target.value as Settings['costPerWeight'] })
+                }
+              >
+                <option value="lb">Pound</option>
+                <option value="oz">Ounce</option>
+                <option value="kg">Kilogram</option>
+                <option value="g">Gram</option>
+              </Select>
+            </Field>
+            <Field label="…and liquids per">
+              <Select
+                value={db.settings.costPerVolume}
+                onChange={(e) =>
+                  updateSettings({ costPerVolume: e.target.value as Settings['costPerVolume'] })
+                }
+              >
+                <option value="floz">Fluid ounce</option>
+                <option value="cup">Cup</option>
+                <option value="quart">Quart</option>
+                <option value="gallon">Gallon</option>
+                <option value="l">Liter</option>
               </Select>
             </Field>
           </div>

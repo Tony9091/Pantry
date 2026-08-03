@@ -6,6 +6,7 @@ import type { ID, Product } from '../types'
 import { useDb, useStore } from '../store/useStore'
 import { makeLookups, productStock } from '../store/selectors'
 import { addDays, formatAmount, isoDate } from '../lib/util'
+import { hasIntrinsicMeasure, measurableUnits } from '../lib/units'
 import { Field, Modal, Select, Stepper, TextInput } from './ui'
 import { BarcodeScanner, isScannerSupported } from './BarcodeScanner'
 import { IconBarcode } from './icons'
@@ -37,9 +38,16 @@ export function ProductDialog({
   const [storeId, setStoreId] = useState(product?.storeId ?? '')
   const [minStock, setMinStock] = useState(product?.minStock ?? 0)
   const [bbDays, setBbDays] = useState(product?.defaultBestBeforeDays ?? 0)
+  const [packageSize, setPackageSize] = useState(product?.packageSize ?? 0)
+  const [packageUnitId, setPackageUnitId] = useState(product?.packageUnitId ?? '')
   const [barcode, setBarcode] = useState(product?.barcode ?? initialBarcode ?? '')
   const [note, setNote] = useState(product?.note ?? '')
   const [scanning, setScanning] = useState(false)
+
+  // A pound of chicken needs no package size; a pack of coffee does.
+  const intrinsic = hasIntrinsicMeasure(db, { ...(product ?? ({} as Product)), unitId })
+  const measurable = measurableUnits(db)
+  const unitName = db.units.find((u) => u.id === unitId)?.name ?? 'unit'
 
   const save = () => {
     const trimmed = name.trim()
@@ -54,6 +62,8 @@ export function ProductDialog({
       defaultBestBeforeDays: bbDays > 0 ? bbDays : undefined,
       barcode: barcode.trim() || undefined,
       note: note.trim() || undefined,
+      packageSize: packageSize > 0 && packageUnitId ? packageSize : undefined,
+      packageUnitId: packageSize > 0 && packageUnitId ? packageUnitId : undefined,
     }
     if (product) {
       updateProduct(product.id, payload)
@@ -152,6 +162,35 @@ export function ProductDialog({
       <Field label="Shelf life (days)" hint="Pre-fills the best-before date when you add stock. 0 to skip.">
         <Stepper value={bbDays} onChange={setBbDays} min={0} />
       </Field>
+
+      {/* Only asked for when the unit itself carries no measure — a product
+          sold by the pound already knows what it weighs. */}
+      {!intrinsic && (
+        <Field
+          label="What's in one?"
+          hint={`Tell Pantry how much is in one ${unitName.toLowerCase()} and it can work out the cost per pound.`}
+        >
+          <div style={{ display: 'flex', gap: 8 }}>
+            <TextInput
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              placeholder="e.g. 12"
+              value={packageSize || ''}
+              onChange={(e) => setPackageSize(Number(e.target.value) || 0)}
+            />
+            <Select value={packageUnitId} onChange={(e) => setPackageUnitId(e.target.value)}>
+              <option value="">unit</option>
+              {measurable.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.plural}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </Field>
+      )}
 
       <Field label="Barcode">
         <div style={{ display: 'flex', gap: 8 }}>

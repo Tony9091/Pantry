@@ -141,12 +141,12 @@ function renderIcon(size, { radius = 0.225, glyph = 0.62 } = {}) {
       const px = x + 0.5
       const py = y + 0.5
 
-      // Background: rounded square with a diagonal orange gradient.
+      // Background: rounded square with a diagonal leaf-to-pine gradient.
       const bgAlpha = radius > 0 ? smooth(aa, distToRoundedRect(px, py, size, size, cornerR)) : 1
       const t = Math.max(0, Math.min(1, (px / size) * 0.45 + (py / size) * 0.55))
-      let r = mix(0xff, 0xf3, t)
-      let g = mix(0xa6, 0x54, t)
-      let b = mix(0x3d, 0x1f, t)
+      let r = mix(0x3c, 0x0a, t)
+      let g = mix(0xe6, 0x7d, t)
+      let b = mix(0x8c, 0x4e, t)
 
       // Glyph: white cart composited over the gradient.
       const gx = (px - glyphOffset) / glyphScale

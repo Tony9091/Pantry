@@ -15,7 +15,11 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/gen-icons.mjs",
-    "e2e": "npm run build && node scripts/e2e.mjs"
+    "e2e": "npm run build && node scripts/e2e.mjs",
+    "standalone": "npm run build && node scripts/build-standalone.mjs",
+    "test:parse": "node scripts/test-parse.mjs",
+    "test": "npm run test:parse && npm run e2e && npm run test:offline",
+    "test:offline": "node scripts/test-offline.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",

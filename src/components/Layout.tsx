@@ -10,6 +10,8 @@ import {
   IconCheckCircle,
   IconHome,
   IconBox,
+  IconList,
+  IconPlus,
   IconSettings,
 } from './icons'
 
@@ -30,7 +32,9 @@ function useNavItems(): NavItem[] {
 
   return [
     { to: '/', label: 'Home', icon: IconHome, badge: expiring },
+    { to: '/add', label: 'Add anything', icon: IconPlus },
     { to: '/stock', label: 'Stock', icon: IconBox, badge: missing },
+    { to: '/inventory', label: 'Inventory', icon: IconList },
     { to: '/shopping', label: 'Shopping', icon: IconCart, badge: openShopping },
     { to: '/recipes', label: 'Recipes', icon: IconBook },
     { to: '/plan', label: 'Plan', icon: IconCalendar },
@@ -81,21 +85,41 @@ export function Sidebar() {
 
 export function TabBar() {
   const route = usePathname()
-  // The bottom bar holds five tabs; Chores lives behind Settings on mobile.
-  const items = useNavItems().slice(0, 5)
+  const all = useNavItems()
+  const pick = (to: string) => all.find((i) => i.to === to)!
+
+  // Add sits dead centre, under the thumb — it's the thing everyone in the
+  // house uses most, so it gets the biggest target on the screen.
+  const left = [pick('/'), pick('/stock')]
+  const right = [pick('/shopping'), pick('/recipes')]
+
+  const tab = (item: NavItem) => {
+    const Icon = item.icon
+    return (
+      <Link key={item.to} to={item.to} className={clsx(isActive(route, item.to) && 'active')}>
+        <Icon />
+        <span>{item.label}</span>
+        {item.badge ? (
+          <span className="tab-badge">{item.badge > 99 ? '99+' : item.badge}</span>
+        ) : null}
+      </Link>
+    )
+  }
 
   return (
-    <nav className="tabbar">
-      {items.map((item) => {
-        const Icon = item.icon
-        return (
-          <Link key={item.to} to={item.to} className={clsx(isActive(route, item.to) && 'active')}>
-            <Icon />
-            <span>{item.label}</span>
-            {item.badge ? <span className="tab-badge">{item.badge > 99 ? '99+' : item.badge}</span> : null}
-          </Link>
-        )
-      })}
+    <nav className="tabbar has-add">
+      {left.map(tab)}
+      <Link
+        to="/add"
+        className={clsx('tab-add', isActive(route, '/add') && 'active')}
+        aria-label="Add anything"
+      >
+        <span className="tab-add-btn">
+          <IconPlus />
+        </span>
+        <span>Add</span>
+      </Link>
+      {right.map(tab)}
     </nav>
   )
 }

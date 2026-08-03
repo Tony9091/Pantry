@@ -68,6 +68,23 @@ export function formatMoney(n: number, currency: string): string {
   }
 }
 
+/** Money shown per single unit. A price per gram needs more decimal places
+ *  than a price per bottle — rounding to cents would render every cheese
+ *  purchase as "$0.02" and hide real differences. */
+export function formatUnitPrice(n: number, currency: string): string {
+  const decimals = n >= 1 ? 2 : n >= 0.1 ? 3 : 4
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(n)
+  } catch {
+    return `${currency} ${n.toFixed(decimals)}`
+  }
+}
+
 export function startOfWeek(iso: string, weekStartsOn: 0 | 1): string {
   const d = parseDate(iso)
   const diff = (d.getDay() - weekStartsOn + 7) % 7

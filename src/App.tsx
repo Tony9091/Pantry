@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouteSegments, useScrollTopOnNavigate } from './lib/router'
 import { useDb } from './store/useStore'
 import { Sidebar, TabBar } from './components/Layout'
@@ -6,6 +6,8 @@ import { ToastProvider } from './components/ui'
 import { Dashboard } from './pages/Dashboard'
 import { ProductDetailPage, StockPage } from './pages/Stock'
 import { ShoppingPage } from './pages/Shopping'
+import { InventoryPage } from './pages/Inventory'
+import { QuickAddPage } from './pages/QuickAdd'
 import { RecipeDetailPage, RecipesPage } from './pages/Recipes'
 import { MealPlanPage } from './pages/MealPlan'
 import { ChoresPage } from './pages/Chores'
@@ -32,6 +34,36 @@ function useTheme() {
   }, [theme])
 }
 
+/** Tracks connectivity so the app can say so, rather than looking broken. */
+function useOnline(): boolean {
+  const [online, setOnline] = useState(() =>
+    typeof navigator === 'undefined' ? true : navigator.onLine,
+  )
+  useEffect(() => {
+    const up = () => setOnline(true)
+    const down = () => setOnline(false)
+    window.addEventListener('online', up)
+    window.addEventListener('offline', down)
+    return () => {
+      window.removeEventListener('online', up)
+      window.removeEventListener('offline', down)
+    }
+  }, [])
+  return online
+}
+
+/** A quiet reassurance, not an error: everything still works. */
+function OfflineNotice() {
+  const online = useOnline()
+  if (online) return null
+  return (
+    <div className="offline-pill" role="status">
+      <span className="dot" />
+      Offline — everything still works
+    </div>
+  )
+}
+
 function Routes() {
   const segments = useRouteSegments()
   const [head, param] = segments
@@ -43,6 +75,10 @@ function Routes() {
       return param ? <ProductDetailPage productId={param} /> : <StockPage />
     case 'shopping':
       return <ShoppingPage />
+    case 'inventory':
+      return <InventoryPage />
+    case 'add':
+      return <QuickAddPage />
     case 'recipes':
       return param ? <RecipeDetailPage recipeId={param} /> : <RecipesPage />
     case 'plan':
@@ -67,6 +103,7 @@ export default function App() {
         <div className="content">
           <Routes />
         </div>
+        <OfflineNotice />
         <TabBar />
       </div>
     </ToastProvider>

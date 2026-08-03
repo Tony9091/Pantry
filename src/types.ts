@@ -45,6 +45,10 @@ export interface Product {
   defaultBestBeforeDays?: number
   barcode?: string
   note?: string
+  /** What one unit contains, e.g. a 12 oz pack. Lets the app work out cost
+   *  per pound for things sold by the package. */
+  packageSize?: number
+  packageUnitId?: ID
   createdAt: string
 }
 
@@ -66,7 +70,12 @@ export interface StockEntry {
 
 export type StockAction = 'purchase' | 'consume' | 'open' | 'spoil' | 'correction'
 
-/** Append-only audit trail of everything that happened to stock. */
+/** Append-only audit trail of everything that happened to stock.
+ *
+ *  Purchases additionally carry the price, store and shelf life at the time of
+ *  buying. Those live here rather than only on the stock entry so the figures
+ *  survive the stock being eaten — which is exactly when the statistics
+ *  (average price, price history, average shelf life) become interesting. */
 export interface StockLogEntry {
   id: ID
   ts: string
@@ -74,6 +83,11 @@ export interface StockLogEntry {
   productId: ID
   amount: number
   note?: string
+  /** Total paid for this purchase, in the configured currency. */
+  price?: number
+  storeId?: ID
+  /** Days between purchase and best-before, recorded at purchase time. */
+  shelfLifeDays?: number
 }
 
 export interface ShoppingItem {
@@ -169,6 +183,10 @@ export interface Settings {
   theme: ThemePreference
   /** First day of week in the meal planner: 0 = Sunday, 1 = Monday. */
   weekStartsOn: 0 | 1
+  /** What weights are priced against when showing real unit cost. */
+  costPerWeight: 'oz' | 'lb' | 'g' | 'kg'
+  /** What volumes are priced against. */
+  costPerVolume: 'floz' | 'cup' | 'quart' | 'gallon' | 'l'
 }
 
 /** The complete persisted database. */

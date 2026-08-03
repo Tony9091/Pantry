@@ -11,6 +11,7 @@ import type {
   StockEntry,
 } from '../types'
 import { addDays, daysUntil, isoDate, sum } from '../lib/util'
+import { hasIntrinsicMeasure, unitCost, type UnitCost } from '../lib/units'
 
 export interface ProductStock {
   product: Product
@@ -208,6 +209,120 @@ export function mealPlanFor(db: Database, date: string): MealPlanEntry[] {
 /** Total value of everything currently in stock. */
 export function inventoryValue(db: Database): number {
   return sum(db.stock.map((e) => e.price ?? 0))
+}
+
+/* ------------------------------------------------------- product statistics */
+
+export interface PricePoint {
+  date: string
+  storeId?: ID
+  /** Price per single unit, not per purchase. */
+  unitPrice: number
+}
+
+export interface ProductStats {
+  total: number
+  /** How much of what's in stock sits in opened packages. */
+  openedAmount: number
+  /** Value of everything currently in stock. */
+  stockValue: number
+  lastPurchased?: string
+  lastUsed?: string
+  /** Per-unit price of the most recent purchase that recorded one. */
+  lastUnitPrice?: number
+  /** Mean per-unit price across all purchases that recorded one. */
+  averageUnitPrice?: number
+  /** Mean days between purchase and best-before. */
+  averageShelfLifeDays?: number
+  /** Share of everything that left stock which was thrown away, 0–1. */
+  spoilRate?: number
+  totalPurchased: number
+  totalConsumed: number
+  totalSpoiled: number
+  priceHistory: PricePoint[]
+  /** Most recent purchase expressed per pound, fluid ounce, or each. */
+  lastUnitCost?: UnitCost
+  /** Mean of every priced purchase, on the same basis. */
+  averageUnitCost?: UnitCost
+  /** True when the product is sold by the package and hasn't said how much
+   *  is in one — the app can't do the maths until it knows. */
+  needsPackageSize: boolean
+}
+
+/** The figures behind the product statistics panel.
+ *
+ *  Money is stored per purchase, so anything shown "per unit" is divided by the
+ *  amount bought — otherwise buying a 2 kg bag would look twice as expensive as
+ *  a 1 kg one. */
+export function productStats(db: Database, productId: ID): ProductStats {
+  const entries = db.stock.filter((e) => e.productId === productId)
+  const logs = db.stockLog.filter((l) => l.productId === productId)
+
+  const purchases = logs.filter((l) => l.action === 'purchase')
+  const consumed = sum(logs.filter((l) => l.action === 'consume').map((l) => Math.abs(l.amount)))
+  const spoiled = sum(logs.filter((l) => l.action === 'spoil').map((l) => Math.abs(l.amount)))
+  const purchasedTotal = sum(purchases.map((l) => Math.abs(l.amount)))
+
+  const priced = purchases.filter((l) => l.price !== undefined && l.amount > 0)
+  const unitPrices = priced.map((l) => (l.price as number) / l.amount)
+
+  const shelfLives = purchases
+    .map((l) => l.shelfLifeDays)
+    .filter((d): d is number => typeof d === 'number')
+
+  const lastUsedLog = logs.find((l) => l.action === 'consume' || l.action === 'spoil')
+  const leftStock = consumed + spoiled
+
+  const product = db.products.find((p) => p.id === productId)
+  const basis = { mass: db.settings.costPerWeight, volume: db.settings.costPerVolume }
+
+  // Cost per base unit, averaged across purchases rather than averaging the
+  // per-unit prices — a 16 oz buy should weigh twice as much as an 8 oz one.
+  let lastUnitCost: UnitCost | undefined
+  let averageUnitCost: UnitCost | undefined
+  if (product) {
+    const costs = priced
+      .map((l) => unitCost(db, product, l.price as number, l.amount, basis))
+      .filter((c): c is UnitCost => Boolean(c))
+    lastUnitCost = costs[0]
+    if (costs.length > 0) {
+      averageUnitCost = {
+        value: sum(costs.map((c) => c.value)) / costs.length,
+        label: costs[0].label,
+      }
+    }
+  }
+
+  return {
+    lastUnitCost,
+    averageUnitCost,
+    needsPackageSize: product
+      ? !hasIntrinsicMeasure(db, product) && !product.packageSize
+      : false,
+    total: sum(entries.map((e) => e.amount)),
+    openedAmount: sum(entries.filter((e) => e.openedAt).map((e) => e.amount)),
+    stockValue: sum(entries.map((e) => e.price ?? 0)),
+    lastPurchased: purchases[0]?.ts,
+    lastUsed: lastUsedLog?.ts,
+    // stockLog is newest-first, so the first priced purchase is the latest.
+    lastUnitPrice: unitPrices[0],
+    averageUnitPrice: unitPrices.length ? sum(unitPrices) / unitPrices.length : undefined,
+    averageShelfLifeDays: shelfLives.length
+      ? Math.round(sum(shelfLives) / shelfLives.length)
+      : undefined,
+    spoilRate: leftStock > 0 ? spoiled / leftStock : undefined,
+    totalPurchased: purchasedTotal,
+    totalConsumed: consumed,
+    totalSpoiled: spoiled,
+    priceHistory: priced
+      .map((l) => ({
+        date: l.ts,
+        storeId: l.storeId,
+        unitPrice: (l.price as number) / l.amount,
+      }))
+      // Oldest first, so the chart reads left to right.
+      .reverse(),
+  }
 }
 
 export interface Lookups {

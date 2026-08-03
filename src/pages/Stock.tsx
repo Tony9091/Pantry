@@ -1,20 +1,39 @@
 import { useMemo, useState } from 'react'
 import { navigate, useQuery } from '../lib/router'
 import { useDb, useStore } from '../store/useStore'
-import { expiryStatus, makeLookups, productStock, type ProductStock } from '../store/selectors'
-import { clsx, formatAmount, groupBy, matches, relativeDays } from '../lib/util'
+import {
+  expiryStatus,
+  makeLookups,
+  productStats,
+  productStock,
+  type ProductStock,
+} from '../store/selectors'
+import {
+  clsx,
+  formatAmount,
+  formatDate,
+  formatMoney,
+  formatUnitPrice,
+  groupBy,
+  matches,
+  relativeDays,
+} from '../lib/util'
 import { TopBar } from '../components/Layout'
 import { Badge, Card, ConfirmDialog, EmptyState, SearchInput } from '../components/ui'
 import { ConsumeDialog, ProductDialog, PurchaseDialog } from '../components/dialogs'
 import { BarcodeScanner, isScannerSupported } from '../components/BarcodeScanner'
+import { PriceHistory } from '../components/PriceHistory'
 import {
   IconBarcode,
+  IconBox,
+  IconChef,
   IconChevronRight,
   IconEdit,
   IconPlus,
   IconSnow,
   IconTrash,
 } from '../components/icons'
+import type { StockAction } from '../types'
 
 type Filter = 'all' | 'expired' | 'soon' | 'missing' | 'instock'
 
@@ -238,6 +257,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
   const db = useDb()
   const lookups = useMemo(() => makeLookups(db), [db])
   const stock = useMemo(() => productStock(db), [db])
+  const stats = useMemo(() => productStats(db, productId), [db, productId])
   const openEntry = useStore((s) => s.openEntry)
   const removeStockEntry = useStore((s) => s.removeStockEntry)
   const removeProduct = useStore((s) => s.removeProduct)
@@ -364,22 +384,93 @@ export function ProductDetailPage({ productId }: { productId: string }) {
           )}
         </Card>
 
-        <Card title="Details" flush>
-          <DetailRow label="Category" value={lookups.groupName(product.groupId)} />
-          <DetailRow label="Unit" value={lookups.unitName(product.unitId, 2) || '—'} />
-          <DetailRow label="Default location" value={lookups.locationName(product.locationId) || '—'} />
-          <DetailRow label="Usual store" value={lookups.storeName(product.storeId) || 'Any'} />
-          <DetailRow
-            label="Minimum stock"
-            value={product.minStock > 0 ? formatAmount(product.minStock) : 'Not set'}
-          />
-          <DetailRow
-            label="Shelf life"
-            value={product.defaultBestBeforeDays ? `${product.defaultBestBeforeDays} days` : '—'}
-          />
-          {product.barcode && <DetailRow label="Barcode" value={product.barcode} />}
-          {product.note && <DetailRow label="Note" value={product.note} />}
+        <Card title="Product overview">
+          <dl className="facts">
+            <Fact
+              label="Stock amount"
+              value={`${formatAmount(stats.total)} ${lookups.unitName(product.unitId, stats.total)}`}
+              qualifier={
+                stats.openedAmount > 0 ? `${formatAmount(stats.openedAmount)} opened` : undefined
+              }
+            />
+            {stats.stockValue > 0 && (
+              <Fact
+                label="Stock value"
+                value={formatMoney(stats.stockValue, db.settings.currency)}
+              />
+            )}
+            <Fact label="Default location" value={lookups.locationName(product.locationId) || '—'} />
+            <Fact
+              label="Last purchased"
+              value={stats.lastPurchased ? formatDate(stats.lastPurchased.slice(0, 10)) : 'Never'}
+              qualifier={
+                stats.lastPurchased ? relativeDays(stats.lastPurchased.slice(0, 10)) : undefined
+              }
+            />
+            <Fact
+              label="Last used"
+              value={stats.lastUsed ? formatDate(stats.lastUsed.slice(0, 10)) : 'Never'}
+              qualifier={stats.lastUsed ? relativeDays(stats.lastUsed.slice(0, 10)) : undefined}
+            />
+            {stats.lastUnitPrice !== undefined && (
+              <Fact
+                label="Last price"
+                value={`${formatUnitPrice(stats.lastUnitPrice, db.settings.currency)} per ${lookups.unitName(product.unitId, 1)}`}
+              />
+            )}
+            {stats.averageUnitPrice !== undefined && (
+              <Fact
+                label="Average price"
+                value={`${formatUnitPrice(stats.averageUnitPrice, db.settings.currency)} per ${lookups.unitName(product.unitId, 1)}`}
+              />
+            )}
+            {stats.lastUnitCost && (
+              <Fact
+                label="Real cost"
+                value={`${formatUnitPrice(stats.lastUnitCost.value, db.settings.currency)} / ${stats.lastUnitCost.label}`}
+                qualifier="last buy"
+              />
+            )}
+            {stats.averageUnitCost && (
+              <Fact
+                label="Average real cost"
+                value={`${formatUnitPrice(stats.averageUnitCost.value, db.settings.currency)} / ${stats.averageUnitCost.label}`}
+              />
+            )}
+            {stats.averageShelfLifeDays !== undefined && (
+              <Fact
+                label="Average shelf life"
+                value={describeDuration(stats.averageShelfLifeDays)}
+              />
+            )}
+            {stats.spoilRate !== undefined && (
+              <Fact
+                label="Spoil rate"
+                value={`${Math.round(stats.spoilRate * 100)}%`}
+                // Anything over a fifth binned is worth flagging.
+                bad={stats.spoilRate > 0.2}
+              />
+            )}
+            <Fact label="Category" value={lookups.groupName(product.groupId)} />
+            <Fact
+              label="Minimum stock"
+              value={product.minStock > 0 ? formatAmount(product.minStock) : 'Not set'}
+            />
+            {product.barcode && <Fact label="Barcode" value={product.barcode} />}
+            {product.note && <Fact label="Note" value={product.note} />}
+          </dl>
         </Card>
+
+        {stats.priceHistory.length >= 2 && (
+          <Card title="Price history">
+            <PriceHistory
+              points={stats.priceHistory}
+              currency={db.settings.currency}
+              storeName={lookups.storeName}
+              unitLabel={lookups.unitName(product.unitId, 1)}
+            />
+          </Card>
+        )}
 
         {recipesUsing.length > 0 && (
           <Card title="Used in recipes" count={`${recipesUsing.length}`} flush>
@@ -399,22 +490,19 @@ export function ProductDetailPage({ productId }: { productId: string }) {
         )}
 
         {history.length > 0 && (
-          <Card title="History" flush>
-            {history.map((entry) => (
-              <div key={entry.id} className="row">
-                <div className="row-main">
-                  <div className="row-title" style={{ textTransform: 'capitalize', fontSize: 14 }}>
-                    {entry.action}
-                    {entry.note ? ` — ${entry.note}` : ''}
-                  </div>
-                  <div className="row-sub">{new Date(entry.ts).toLocaleString()}</div>
-                </div>
-                <div className="row-aside">
-                  {entry.amount > 0 ? '+' : ''}
-                  {formatAmount(entry.amount)}
-                </div>
-              </div>
-            ))}
+          <Card title="History" count={`${history.length}`} flush>
+            <div className="timeline">
+              {history.map((entry) => (
+                <HistoryEntry
+                  key={entry.id}
+                  action={entry.action}
+                  amount={entry.amount}
+                  note={entry.note}
+                  ts={entry.ts}
+                  unit={lookups.unitName(product.unitId, entry.amount)}
+                />
+              ))}
+            </div>
           </Card>
         )}
 
@@ -446,17 +534,96 @@ export function ProductDetailPage({ productId }: { productId: string }) {
   )
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+/** One event on the stock timeline. Each action gets its own icon, colour and
+ *  plain-English phrasing — "Bought" reads faster than "purchase". */
+function HistoryEntry({
+  action,
+  amount,
+  note,
+  ts,
+  unit,
+}: {
+  action: StockAction
+  amount: number
+  note?: string
+  ts: string
+  unit: string
+}) {
+  /** `dir` is the effect on stock. The log stores consumption as a positive
+   *  quantity, so the sign has to come from the action, not from `amount`. */
+  const meta: Record<
+    StockAction,
+    { label: string; icon: typeof IconPlus; dir: 'up' | 'down' | 'signed' | 'none' }
+  > = {
+    purchase: { label: 'Bought', icon: IconPlus, dir: 'up' },
+    consume: { label: 'Used', icon: IconChef, dir: 'down' },
+    spoil: { label: 'Went to waste', icon: IconTrash, dir: 'down' },
+    // "Opened" records the batch size rather than a change.
+    open: { label: 'Opened', icon: IconBox, dir: 'none' },
+    // Corrections are a true delta and carry their own sign.
+    correction: { label: 'Adjusted', icon: IconEdit, dir: 'signed' },
+  }
+  const { label, icon: Icon, dir } = meta[action]
+  const when = new Date(ts)
+  const isUp = dir === 'up' || (dir === 'signed' && amount > 0)
+
   return (
-    <div className="row">
-      <div className="row-main">
-        <div className="row-sub" style={{ fontSize: 12.5 }}>
-          {label}
+    <div className={`tl ${action}`}>
+      <div className="tl-node">
+        <Icon />
+      </div>
+      <div className="tl-body">
+        <div className="tl-title">
+          <span>{label}</span>
+          {dir !== 'none' && (
+            <span className={`tl-delta ${isUp ? 'up' : 'down'}`}>
+              {isUp ? '+' : '−'}
+              {formatAmount(Math.abs(amount))} {unit}
+            </span>
+          )}
         </div>
-        <div className="row-title" style={{ fontSize: 14.5 }}>
-          {value}
+        <div className="tl-when">
+          {when.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} ·{' '}
+          {when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+          {note ? ` · ${note}` : ''}
         </div>
       </div>
     </div>
   )
+}
+
+/** One line of the product overview panel. */
+function Fact({
+  label,
+  value,
+  qualifier,
+  bad,
+}: {
+  label: string
+  value: string
+  qualifier?: string
+  bad?: boolean
+}) {
+  return (
+    <div className="fact">
+      <dt>{label}</dt>
+      <dd className={bad ? 'bad' : undefined}>
+        {value}
+        {qualifier && <span className="qual">{qualifier}</span>}
+      </dd>
+    </div>
+  )
+}
+
+/** Grocy reports shelf life in months once it's long enough to be clearer. */
+function describeDuration(days: number): string {
+  if (days >= 365) {
+    const years = Math.round(days / 365)
+    return `${years} year${years === 1 ? '' : 's'}`
+  }
+  if (days >= 60) {
+    const months = Math.round(days / 30)
+    return `${months} month${months === 1 ? '' : 's'}`
+  }
+  return `${days} day${days === 1 ? '' : 's'}`
 }

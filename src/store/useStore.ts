@@ -16,7 +16,7 @@ import type {
   Store as ShopStore,
   Unit,
 } from '../types'
-import { addDays, isoDate, uid } from '../lib/util'
+import { addDays, daysUntil, isoDate, uid } from '../lib/util'
 import { createDemoDatabase, createEmptyDatabase } from './seed'
 
 const STORAGE_KEY = 'pantry.db.v1'
@@ -27,7 +27,16 @@ export interface PurchaseInput {
   bestBefore?: string
   locationId?: ID
   price?: number
+  storeId?: ID
   note?: string
+}
+
+/** A stocktake: the amount you actually counted on the shelf. */
+export interface InventoryInput {
+  bestBefore?: string
+  locationId?: ID
+  price?: number
+  storeId?: ID
 }
 
 interface StoreState {
@@ -58,6 +67,8 @@ interface StoreState {
 
   // ---- stock -------------------------------------------------------------
   purchase: (input: PurchaseInput) => void
+  /** Sets stock to the amount you counted, logging the difference. */
+  inventory: (productId: ID, countedAmount: number, opts?: InventoryInput) => void
   /** Consumes `amount` across batches, oldest best-before first. */
   consume: (productId: ID, amount: number, opts?: { spoiled?: boolean }) => void
   consumeEntry: (entryId: ID, amount: number, opts?: { spoiled?: boolean }) => void
@@ -133,6 +144,7 @@ export const useStore = create<StoreState>()(
         productId: ID,
         amount: number,
         note?: string,
+        extra?: { price?: number; storeId?: ID; shelfLifeDays?: number },
       ) => {
         db.stockLog.unshift({
           id: uid('log'),
@@ -141,6 +153,7 @@ export const useStore = create<StoreState>()(
           productId,
           amount,
           note,
+          ...extra,
         })
         // Keep the audit trail from growing without bound in localStorage.
         if (db.stockLog.length > 1000) db.stockLog.length = 1000
@@ -264,7 +277,7 @@ export const useStore = create<StoreState>()(
           }),
 
         // ---- stock ---------------------------------------------------------
-        purchase: ({ productId, amount, bestBefore, locationId, price, note }) =>
+        purchase: ({ productId, amount, bestBefore, locationId, price, storeId, note }) =>
           edit((db) => {
             const product = db.products.find((p) => p.id === productId)
             if (!product || amount <= 0) return
@@ -277,7 +290,41 @@ export const useStore = create<StoreState>()(
               purchasedAt: new Date().toISOString(),
               price,
             })
-            log(db, 'purchase', productId, amount, note)
+            log(db, 'purchase', productId, amount, note, {
+              price,
+              storeId: storeId ?? product.storeId,
+              shelfLifeDays: bestBefore ? Math.max(0, daysUntil(bestBefore)) : undefined,
+            })
+          }),
+
+        inventory: (productId, countedAmount, opts) =>
+          edit((db) => {
+            const product = db.products.find((p) => p.id === productId)
+            if (!product || countedAmount < 0) return
+            const current = db.stock
+              .filter((e) => e.productId === productId)
+              .reduce((a, b) => a + b.amount, 0)
+            const delta = countedAmount - current
+            // A stocktake that matches the books is a no-op, not an empty log line.
+            if (Math.abs(delta) < 0.0001) return
+
+            if (delta > 0) {
+              db.stock.push({
+                id: uid('stk'),
+                productId,
+                amount: delta,
+                bestBefore: opts?.bestBefore,
+                locationId: opts?.locationId ?? product.locationId,
+                purchasedAt: new Date().toISOString(),
+                price: opts?.price,
+              })
+            } else {
+              deduct(db, productId, -delta)
+            }
+            log(db, 'correction', productId, delta, 'Stocktake', {
+              price: delta > 0 ? opts?.price : undefined,
+              storeId: delta > 0 ? opts?.storeId : undefined,
+            })
           }),
 
         consume: (productId, amount, opts) =>
